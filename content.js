@@ -20,11 +20,27 @@ class WebDoggy {
     this.mouthElement = null;
     this.placementMode = false;
     this.placementListener = null;
+    this.gravity = 0.5;
+    this.jumpForce = -10;
+    this.lastScrollY = window.scrollY;
     
     this.activities = ['walk', 'sniff', 'dig', 'bark', 'sit'];
     this.setupMessageListener();
     this.setupClickListener();
     this.setupKeyboardListener();
+    this.setupScrollListener();
+  }
+
+  setupScrollListener() {
+    window.addEventListener('scroll', () => {
+      if (!this.active || this.isDragging) return;
+      
+      const scrollDelta = window.scrollY - this.lastScrollY;
+      this.position.y += scrollDelta;
+      this.lastScrollY = window.scrollY;
+      
+      this.updatePosition();
+    });
   }
 
   setupMessageListener() {
@@ -102,6 +118,7 @@ class WebDoggy {
     if (this.active) return;
     
     this.active = true;
+    this.lastScrollY = window.scrollY; // Initialize scroll position
     this.doggy = document.createElement('div');
     this.doggy.className = 'web-doggy';
     this.doggy.textContent = '🐕';
@@ -160,6 +177,7 @@ class WebDoggy {
       offsetX = e.clientX - this.position.x;
       offsetY = e.clientY - this.position.y;
       this.stopActivity();
+      this.velocity.y = 0; // Stop falling when grabbed
     });
     
     document.addEventListener('mousemove', (e) => {
@@ -174,6 +192,7 @@ class WebDoggy {
       if (this.isDragging) {
         this.isDragging = false;
         this.doggy.classList.remove('dragging');
+        this.velocity.y = 0; // Reset velocity when released
         this.startRandomActivity();
       }
     });
@@ -199,39 +218,145 @@ class WebDoggy {
   walk() {
     this.position.x += this.velocity.x;
     
-    const element = this.getElementBelow();
-    if (element) {
-      const rect = element.getBoundingClientRect();
-      this.groundLevel = rect.top + window.scrollY;
-      this.position.y = this.groundLevel - 35;
-    } else {
-      this.position.y += 2;
+    // Apply gravity
+    if (!this.isClimbing) {
+      this.velocity.y += 0.5; // Gravity
     }
     
-    if (this.position.x > window.innerWidth - 50 || this.position.x < 0) {
+    this.position.y += this.velocity.y;
+    
+    // Get surface info below doggy
+    const surfaceInfo = this.getSurfaceBelow();
+    
+    if (surfaceInfo) {
+      // Land on the surface
+      if (this.position.y + 35 >= surfaceInfo.top) {
+        this.position.y = surfaceInfo.top - 35;
+        this.velocity.y = 0;
+        this.isClimbing = false;
+      }
+    }
+    
+    // Check for ladder climbing
+    const ladder = this.checkLadderCollision();
+    if (ladder && Math.random() < 0.02) {
+      this.isClimbing = true;
+      this.velocity.y = -2;
+    }
+    
+    // Screen boundaries
+    if (this.position.x > window.innerWidth - 50) {
+      this.position.x = window.innerWidth - 50;
+      this.velocity.x *= -1;
+      this.flip();
+    } else if (this.position.x < 0) {
+      this.position.x = 0;
       this.velocity.x *= -1;
       this.flip();
     }
     
+    // Bottom boundary
     if (this.position.y > window.innerHeight + window.scrollY - 50) {
       this.position.y = window.innerHeight + window.scrollY - 50;
+      this.velocity.y = 0;
     }
     
     this.updatePosition();
   }
 
-  getElementBelow() {
-    const elements = document.elementsFromPoint(
-      this.position.x + 20,
-      this.position.y + 40 - window.scrollY
-    );
+  getSurfaceBelow() {
+    const checkPoints = [
+      { x: this.position.x + 10, y: this.position.y + 36 },
+      { x: this.position.x + 25, y: this.position.y + 36 }
+    ];
     
-    for (let el of elements) {
-      if (el !== this.doggy && 
-          !el.classList.contains('doggy-ladder') && 
-          !el.classList.contains('doggy-block') &&
-          el.offsetHeight > 0) {
-        return el;
+    let closestSurface = null;
+    let closestDistance = Infinity;
+    
+    for (let point of checkPoints) {
+      // Check custom objects first (blocks and ladders)
+      for (let block of this.blocks) {
+        const rect = block.getBoundingClientRect();
+        const blockTop = rect.top + window.scrollY;
+        const blockBottom = rect.bottom + window.scrollY;
+        const blockLeft = rect.left + window.scrollX;
+        const blockRight = rect.right + window.scrollX;
+        
+        if (point.x >= blockLeft && point.x <= blockRight &&
+            point.y >= blockTop - 5 && point.y <= blockBottom) {
+          const distance = Math.abs(point.y - blockTop);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestSurface = { top: blockTop, element: block };
+          }
+        }
+      }
+      
+      // Check DOM elements
+      const elements = document.elementsFromPoint(
+        point.x - window.scrollX,
+        point.y - window.scrollY
+      );
+      
+      for (let el of elements) {
+        if (el === this.doggy || 
+            el.classList.contains('doggy-stolen-text') ||
+            el.classList.contains('doggy-command-menu') ||
+            el === this.mouthElement) {
+          continue;
+        }
+        
+        // Check if element is visible and has dimensions
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+        
+        // Skip if element is the body or html
+        if (el === document.body || el === document.documentElement) continue;
+        
+        const computedStyle = window.getComputedStyle(el);
+        
+        // Check if element can be walked on
+        const canWalkOn = (
+          el.tagName === 'IMG' ||
+          el.tagName === 'INPUT' ||
+          el.tagName === 'TEXTAREA' ||
+          el.tagName === 'BUTTON' ||
+          el.tagName === 'SELECT' ||
+          el.classList.contains('doggy-block') ||
+          rect.height > 20 || // Substantial elements
+          parseFloat(computedStyle.borderTopWidth) > 0 || // Elements with borders
+          computedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)' || // Elements with background
+          computedStyle.backgroundImage !== 'none'
+        );
+        
+        if (canWalkOn) {
+          const elementTop = rect.top + window.scrollY;
+          const distance = Math.abs(point.y - elementTop);
+          
+          if (distance < closestDistance && distance < 50) {
+            closestDistance = distance;
+            closestSurface = { top: elementTop, element: el };
+          }
+        }
+      }
+    }
+    
+    return closestSurface;
+  }
+
+  checkLadderCollision() {
+    for (let ladder of this.ladders) {
+      const rect = ladder.getBoundingClientRect();
+      const ladderLeft = rect.left + window.scrollX;
+      const ladderRight = rect.right + window.scrollX;
+      const ladderTop = rect.top + window.scrollY;
+      const ladderBottom = rect.bottom + window.scrollY;
+      
+      if (this.position.x + 20 >= ladderLeft && 
+          this.position.x + 20 <= ladderRight &&
+          this.position.y + 35 >= ladderTop && 
+          this.position.y <= ladderBottom) {
+        return ladder;
       }
     }
     return null;
@@ -252,21 +377,30 @@ class WebDoggy {
     
     if (activity === 'walk') {
       this.doggy.className = 'web-doggy walking';
+      this.velocity.y = 0; // Reset vertical velocity when starting to walk
       this.activityTimer = setTimeout(() => this.startRandomActivity(), 3000 + Math.random() * 4000);
     } else if (activity === 'sniff') {
       this.doggy.className = 'web-doggy sniffing';
+      this.velocity.x = 0; // Stop horizontal movement
+      this.velocity.y = 0;
       this.activityTimer = setTimeout(() => this.startRandomActivity(), 2000);
     } else if (activity === 'dig') {
       this.doggy.className = 'web-doggy digging';
+      this.velocity.x = 0;
+      this.velocity.y = 0;
       this.activityTimer = setTimeout(() => {
         this.startRandomActivity();
       }, 2000);
     } else if (activity === 'bark') {
       this.doggy.className = 'web-doggy barking';
+      this.velocity.x = 0;
+      this.velocity.y = 0;
       this.activityTimer = setTimeout(() => this.startRandomActivity(), 1000);
     } else if (activity === 'sit') {
       this.doggy.className = 'web-doggy';
       this.doggy.textContent = '🐕';
+      this.velocity.x = 0;
+      this.velocity.y = 0;
       this.activityTimer = setTimeout(() => this.startRandomActivity(), 3000);
     }
   }
@@ -275,6 +409,7 @@ class WebDoggy {
     clearTimeout(this.activityTimer);
     this.doggy.className = 'web-doggy';
     this.currentActivity = 'idle';
+    this.velocity.x = Math.abs(this.velocity.x) > 0 ? this.velocity.x : 2;
   }
 
   updatePosition() {
@@ -299,13 +434,42 @@ class WebDoggy {
     
     if (distance < 10) {
       this.targetPosition = null;
+      this.velocity.y = 0;
       this.startRandomActivity();
       return;
     }
     
     const speed = 5;
-    this.position.x += (dx / distance) * speed;
-    this.position.y += (dy / distance) * speed;
+    const moveX = (dx / distance) * speed;
+    const moveY = (dy / distance) * speed;
+    
+    this.position.x += moveX;
+    
+    // Apply gravity and surface detection even when moving to target
+    const surfaceInfo = this.getSurfaceBelow();
+    
+    if (surfaceInfo && this.position.y + 35 >= surfaceInfo.top - 5) {
+      // Walking on surface
+      this.position.y = surfaceInfo.top - 35;
+      this.velocity.y = 0;
+      
+      // Jump over obstacles if target is above
+      if (this.targetPosition.y < this.position.y - 20) {
+        this.velocity.y = -8;
+        this.doggy.className = 'web-doggy jumping';
+      }
+    } else {
+      // In air - apply gravity
+      this.velocity.y += 0.5;
+      this.position.y += this.velocity.y;
+    }
+    
+    // Check ladder
+    const ladder = this.checkLadderCollision();
+    if (ladder && this.targetPosition.y < this.position.y) {
+      this.velocity.y = -3;
+      this.isClimbing = true;
+    }
     
     if ((dx > 0 && !this.isFlipped) || (dx < 0 && this.isFlipped)) {
       this.flip();
@@ -394,6 +558,7 @@ class WebDoggy {
 
   commandJump() {
     this.stopActivity();
+    this.velocity.y = this.jumpForce;
     this.doggy.className = 'web-doggy jumping';
     setTimeout(() => this.startRandomActivity(), 600);
   }
@@ -699,9 +864,9 @@ class WebDoggy {
         } else {
           // Place the text as a sticky note on the page
           const textElement = document.createElement('div');
-          textElement.style.position = 'fixed';
+          textElement.style.position = 'absolute';
           textElement.style.left = x + 'px';
-          textElement.style.top = (y - window.scrollY) + 'px';
+          textElement.style.top = y + 'px';
           textElement.style.background = 'rgba(255, 255, 255, 0.95)';
           textElement.style.padding = '10px 15px';
           textElement.style.borderRadius = '8px';
