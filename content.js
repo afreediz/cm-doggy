@@ -26,6 +26,8 @@ class WebDoggy {
     this.stuckCounter = 0;
     this.lastPosition = { x: 0, y: 0 };
     this.stuckThreshold = 50;
+    this.isFlying = false;
+    this.flyingTarget = null;
     
     this.activities = ['walk', 'sniff', 'dig', 'bark', 'sit'];
     this.setupMessageListener();
@@ -96,6 +98,9 @@ class WebDoggy {
       } else if (e.ctrlKey && e.key === 'a') {
         e.preventDefault();
         this.preparePlacement();
+      } else if (e.ctrlKey && e.key === 'f') {
+        e.preventDefault();
+        this.toggleFlyMode();
       } else if (e.ctrlKey && e.key === 'ArrowUp') {
         e.preventDefault();
         this.jumpToElement('up');
@@ -150,8 +155,15 @@ class WebDoggy {
     if (!this.active) return;
     
     this.active = false;
+    this.isFlying = false;
+    this.flyingTarget = null;
     cancelAnimationFrame(this.animationFrame);
     clearTimeout(this.activityTimer);
+    
+    if (this.flyingControlHandler) {
+      document.removeEventListener('keydown', this.flyingControlHandler);
+      this.flyingControlHandler = null;
+    }
     
     if (this.doggy) {
       this.doggy.remove();
@@ -224,7 +236,9 @@ class WebDoggy {
     // Check if doggy is stuck
     this.checkIfStuck();
     
-    if (this.currentActivity === 'walk' && !this.isDragging) {
+    if (this.isFlying) {
+      this.fly();
+    } else if (this.currentActivity === 'walk' && !this.isDragging) {
       this.walk();
     } else if (this.targetPosition && !this.isDragging) {
       this.moveToTarget();
@@ -237,7 +251,7 @@ class WebDoggy {
     const moved = Math.abs(this.position.x - this.lastPosition.x) + 
                   Math.abs(this.position.y - this.lastPosition.y);
     
-    if (moved < 1 && (this.currentActivity === 'walk' || this.targetPosition)) {
+    if (moved < 1 && this.currentActivity === 'walk') {
       this.stuckCounter++;
       
       if (this.stuckCounter > this.stuckThreshold) {
@@ -254,30 +268,17 @@ class WebDoggy {
   }
 
   unstuck() {
-    // Try jumping higher to get unstuck
-    this.velocity.y = -12;
+    // Try jumping
+    this.velocity.y = this.jumpForce;
     this.doggy.className = 'web-doggy jumping';
     
     // Also change direction
     this.velocity.x *= -1;
     this.flip();
     
-    // If we have a target, try a different approach
-    if (this.targetPosition) {
-      const dx = this.targetPosition.x - this.position.x;
-      const dy = this.targetPosition.y - this.position.y;
-      
-      // If target is significantly above or below, give a stronger vertical push
-      if (Math.abs(dy) > 50) {
-        this.velocity.y = dy < 0 ? -15 : 5;
-      }
-    }
-    
     setTimeout(() => {
       if (this.currentActivity === 'walk') {
         this.doggy.className = 'web-doggy walking';
-      } else if (this.targetPosition) {
-        this.doggy.className = 'web-doggy running';
       }
     }, 600);
   }
@@ -498,10 +499,9 @@ class WebDoggy {
   }
 
   callDoggyTo(x, y) {
-    this.targetPosition = { x: x - 20, y: y };
+    this.targetPosition = { x: x - 20, y: y - 40 };
     this.stopActivity();
     this.doggy.className = 'web-doggy running';
-    this.velocity.y = 0; // Reset vertical velocity when starting new target
   }
 
   moveToTarget() {
@@ -514,7 +514,20 @@ class WebDoggy {
     if (distance < 10) {
       this.targetPosition = null;
       this.velocity.y = 0;
+      this.isFlying = false;
+      this.flyingTarget = null;
+      this.doggy.textContent = '🐕';
       this.startRandomActivity();
+      return;
+    }
+    
+    // Check if target is significantly above or below (needs flying)
+    const verticalDistance = Math.abs(dy);
+    const horizontalDistance = Math.abs(dx);
+    
+    if (verticalDistance > 150 && !this.isFlying) {
+      // Start flying mode
+      this.startFlying(this.targetPosition);
       return;
     }
     
@@ -522,9 +535,6 @@ class WebDoggy {
     const moveX = (dx / distance) * speed;
     
     this.position.x += moveX;
-    
-    // Check if target is above or below
-    const verticalDiff = this.targetPosition.y - this.position.y;
     
     // Apply gravity and surface detection even when moving to target
     const surfaceInfo = this.getSurfaceBelow();
@@ -534,48 +544,110 @@ class WebDoggy {
       this.position.y = surfaceInfo.top - 35;
       this.velocity.y = 0;
       
-      // If target is above us, jump
-      if (verticalDiff < -10) {
-        // Calculate jump force based on height difference
-        const jumpForce = Math.max(-15, Math.min(-8, verticalDiff / 3));
-        this.velocity.y = jumpForce;
+      // Jump over obstacles if target is above or far
+      if (this.targetPosition.y < this.position.y - 30 || Math.abs(dx) > 100) {
+        this.velocity.y = -10;
         this.doggy.className = 'web-doggy jumping';
-      }
-      // If target is below and we're close horizontally, let gravity handle it
-      else if (verticalDiff > 20 && Math.abs(dx) < 50) {
-        // Don't resist gravity, let doggy fall down
-        this.velocity.y = 2;
       }
     } else {
       // In air - apply gravity
       this.velocity.y += 0.5;
+      this.position.y += this.velocity.y;
       
-      // If we need to go up significantly and we're falling, jump again
-      if (verticalDiff < -30 && this.velocity.y > 0) {
+      // If we need to go up, jump
+      if (dy < -50 && this.velocity.y > -5) {
         this.velocity.y = -10;
       }
-      
-      // If target is below us and we're going up, start falling faster
-      if (verticalDiff > 30 && this.velocity.y < 0) {
-        this.velocity.y = Math.min(this.velocity.y + 1, 3);
-      }
-      
-      this.position.y += this.velocity.y;
     }
     
     // Check ladder
     const ladder = this.checkLadderCollision();
-    if (ladder) {
-      if (verticalDiff < -10) {
-        // Climb up the ladder
-        this.velocity.y = -4;
-        this.isClimbing = true;
-      } else if (verticalDiff > 10) {
-        // Slide down the ladder
-        this.velocity.y = 4;
-        this.isClimbing = true;
-      }
+    if (ladder && this.targetPosition.y < this.position.y) {
+      this.velocity.y = -3;
+      this.isClimbing = true;
     }
+    
+    if ((dx > 0 && !this.isFlipped) || (dx < 0 && this.isFlipped)) {
+      this.flip();
+    }
+    
+    this.updatePosition();
+  }
+
+  startFlying(target) {
+    this.isFlying = true;
+    this.flyingTarget = target;
+    this.doggy.textContent = '🐕';
+    this.doggy.className = 'web-doggy flying';
+    this.stopActivity();
+    
+    // Add flying animation to CSS dynamically
+    if (!document.getElementById('doggy-fly-style')) {
+      const style = document.createElement('style');
+      style.id = 'doggy-fly-style';
+      style.textContent = `
+        @keyframes fly {
+          0%, 100% { transform: translateY(0) rotate(-5deg); }
+          50% { transform: translateY(-8px) rotate(5deg); }
+        }
+        .web-doggy.flying {
+          animation: fly 0.3s infinite;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    // Show flying indicator
+    const indicator = document.createElement('div');
+    indicator.textContent = '✈️';
+    indicator.style.position = 'absolute';
+    indicator.style.left = (this.position.x + 40) + 'px';
+    indicator.style.top = (this.position.y - 20) + 'px';
+    indicator.style.fontSize = '20px';
+    indicator.style.zIndex = '1000000';
+    indicator.style.pointerEvents = 'none';
+    document.body.appendChild(indicator);
+    
+    const updateIndicator = () => {
+      if (this.isFlying && this.active) {
+        indicator.style.left = (this.position.x + 40) + 'px';
+        indicator.style.top = (this.position.y - 20) + 'px';
+        requestAnimationFrame(updateIndicator);
+      } else {
+        indicator.style.transition = 'opacity 0.5s';
+        indicator.style.opacity = '0';
+        setTimeout(() => indicator.remove(), 500);
+      }
+    };
+    updateIndicator();
+  }
+
+  fly() {
+    if (!this.flyingTarget) {
+      this.isFlying = false;
+      this.doggy.className = 'web-doggy';
+      return;
+    }
+    
+    const dx = this.flyingTarget.x - this.position.x;
+    const dy = this.flyingTarget.y - this.position.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    if (distance < 15) {
+      // Reached target
+      this.isFlying = false;
+      this.flyingTarget = null;
+      this.velocity.y = 0;
+      this.doggy.className = 'web-doggy';
+      this.doggy.textContent = '🐕';
+      this.targetPosition = null;
+      this.startRandomActivity();
+      return;
+    }
+    
+    const flySpeed = 6;
+    this.position.x += (dx / distance) * flySpeed;
+    this.position.y += (dy / distance) * flySpeed;
     
     if ((dx > 0 && !this.isFlipped) || (dx < 0 && this.isFlipped)) {
       this.flip();
@@ -599,7 +671,8 @@ class WebDoggy {
       { text: '🏃 Fetch', action: () => this.commandFetch() },
       { text: '🎾 Play', action: () => this.commandPlay() },
       { text: '💤 Sleep', action: () => this.commandSleep() },
-      { text: '🦘 Jump', action: () => this.commandJump() }
+      { text: '🦘 Jump', action: () => this.commandJump() },
+      { text: this.isFlying ? '🛬 Land' : '✈️ Fly', action: () => this.toggleFlyMode() }
     ];
     
     commands.forEach(cmd => {
@@ -667,6 +740,108 @@ class WebDoggy {
     this.velocity.y = this.jumpForce;
     this.doggy.className = 'web-doggy jumping';
     setTimeout(() => this.startRandomActivity(), 600);
+  }
+
+  toggleFlyMode() {
+    if (this.isFlying) {
+      // Stop flying
+      this.isFlying = false;
+      this.flyingTarget = null;
+      this.doggy.className = 'web-doggy';
+      this.doggy.textContent = '🐕';
+      this.startRandomActivity();
+      
+      // Show message
+      const msg = document.createElement('div');
+      msg.className = 'doggy-stolen-text';
+      msg.textContent = '🐕 Landing...';
+      msg.style.left = (this.position.x + 40) + 'px';
+      msg.style.top = (this.position.y - 40) + 'px';
+      msg.style.background = 'rgba(100, 200, 255, 0.9)';
+      document.body.appendChild(msg);
+      
+      setTimeout(() => {
+        msg.style.transition = 'opacity 0.5s';
+        msg.style.opacity = '0';
+        setTimeout(() => msg.remove(), 500);
+      }, 1000);
+    } else {
+      // Start free flying mode
+      this.isFlying = true;
+      this.flyingTarget = null; // Free flight, no target
+      this.stopActivity();
+      this.doggy.textContent = '🐕';
+      this.doggy.className = 'web-doggy flying';
+      
+      // Add flying animation if not already added
+      if (!document.getElementById('doggy-fly-style')) {
+        const style = document.createElement('style');
+        style.id = 'doggy-fly-style';
+        style.textContent = `
+          @keyframes fly {
+            0%, 100% { transform: translateY(0) rotate(-5deg); }
+            50% { transform: translateY(-8px) rotate(5deg); }
+          }
+          .web-doggy.flying {
+            animation: fly 0.3s infinite;
+          }
+        `;
+        document.head.appendChild(style);
+      }
+      
+      // Show message
+      const msg = document.createElement('div');
+      msg.className = 'doggy-stolen-text';
+      msg.textContent = '✈️ Flying! Use arrows to move';
+      msg.style.left = (this.position.x + 40) + 'px';
+      msg.style.top = (this.position.y - 40) + 'px';
+      msg.style.background = 'rgba(100, 200, 255, 0.9)';
+      msg.style.maxWidth = '250px';
+      document.body.appendChild(msg);
+      
+      setTimeout(() => {
+        msg.style.transition = 'opacity 0.5s';
+        msg.style.opacity = '0';
+        setTimeout(() => msg.remove(), 500);
+      }, 2500);
+      
+      // Setup flying controls
+      this.setupFlyingControls();
+    }
+  }
+
+  setupFlyingControls() {
+    const flyingControlHandler = (e) => {
+      if (!this.isFlying || this.flyingTarget) return;
+      
+      const flySpeed = 8;
+      
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        this.position.y -= flySpeed;
+      } else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        this.position.y += flySpeed;
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        this.position.x -= flySpeed;
+        if (!this.isFlipped) this.flip();
+      } else if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        this.position.x += flySpeed;
+        if (this.isFlipped) this.flip();
+      }
+      
+      this.updatePosition();
+    };
+    
+    // Remove old listener if exists
+    if (this.flyingControlHandler) {
+      document.removeEventListener('keydown', this.flyingControlHandler);
+    }
+    
+    this.flyingControlHandler = flyingControlHandler;
+    document.addEventListener('keydown', flyingControlHandler);
   }
 
   jumpToElement(direction) {
