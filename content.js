@@ -23,6 +23,9 @@ class WebDoggy {
     this.gravity = 0.5;
     this.jumpForce = -10;
     this.lastScrollY = window.scrollY;
+    this.stuckCounter = 0;
+    this.lastPosition = { x: 0, y: 0 };
+    this.stuckThreshold = 50;
     
     this.activities = ['walk', 'sniff', 'dig', 'bark', 'sit'];
     this.setupMessageListener();
@@ -93,6 +96,18 @@ class WebDoggy {
       } else if (e.ctrlKey && e.key === 'a') {
         e.preventDefault();
         this.preparePlacement();
+      } else if (e.ctrlKey && e.key === 'ArrowUp') {
+        e.preventDefault();
+        this.jumpToElement('up');
+      } else if (e.ctrlKey && e.key === 'ArrowDown') {
+        e.preventDefault();
+        this.jumpToElement('down');
+      } else if (e.ctrlKey && e.key === 'ArrowLeft') {
+        e.preventDefault();
+        this.jumpToElement('left');
+      } else if (e.ctrlKey && e.key === 'ArrowRight') {
+        e.preventDefault();
+        this.jumpToElement('right');
       }
     });
 
@@ -206,6 +221,9 @@ class WebDoggy {
   updateLoop() {
     if (!this.active) return;
     
+    // Check if doggy is stuck
+    this.checkIfStuck();
+    
     if (this.currentActivity === 'walk' && !this.isDragging) {
       this.walk();
     } else if (this.targetPosition && !this.isDragging) {
@@ -213,6 +231,42 @@ class WebDoggy {
     }
     
     this.animationFrame = requestAnimationFrame(() => this.updateLoop());
+  }
+
+  checkIfStuck() {
+    const moved = Math.abs(this.position.x - this.lastPosition.x) + 
+                  Math.abs(this.position.y - this.lastPosition.y);
+    
+    if (moved < 3 && this.currentActivity === 'walk') {
+      this.stuckCounter++;
+      
+      if (this.stuckCounter > this.stuckThreshold) {
+        // Doggy is stuck, try to unstuck
+        this.unstuck();
+        this.stuckCounter = 0;
+      }
+    } else {
+      this.stuckCounter = 0;
+    }
+    
+    this.lastPosition.x = this.position.x;
+    this.lastPosition.y = this.position.y;
+  }
+
+  unstuck() {
+    // Try jumping
+    this.velocity.y = this.jumpForce;
+    this.doggy.className = 'web-doggy jumping';
+    
+    // Also change direction
+    this.velocity.x *= -1;
+    this.flip();
+    
+    setTimeout(() => {
+      if (this.currentActivity === 'walk') {
+        this.doggy.className = 'web-doggy walking';
+      }
+    }, 600);
   }
 
   walk() {
@@ -235,6 +289,14 @@ class WebDoggy {
         this.velocity.y = 0;
         this.isClimbing = false;
       }
+    } else {
+      // No surface found, limit falling
+      const maxFallDepth = window.innerHeight + window.scrollY;
+      if (this.position.y > maxFallDepth - 100) {
+        // Create an invisible floor
+        this.position.y = maxFallDepth - 100;
+        this.velocity.y = 0;
+      }
     }
     
     // Check for ladder climbing
@@ -244,13 +306,14 @@ class WebDoggy {
       this.velocity.y = -2;
     }
     
-    // Screen boundaries
-    if (this.position.x > window.innerWidth - 50) {
-      this.position.x = window.innerWidth - 50;
+    // Screen boundaries with padding
+    const edgePadding = 10;
+    if (this.position.x > window.innerWidth - 50 - edgePadding) {
+      this.position.x = window.innerWidth - 50 - edgePadding;
       this.velocity.x *= -1;
       this.flip();
-    } else if (this.position.x < 0) {
-      this.position.x = 0;
+    } else if (this.position.x < edgePadding) {
+      this.position.x = edgePadding;
       this.velocity.x *= -1;
       this.flip();
     }
@@ -322,6 +385,8 @@ class WebDoggy {
           el.tagName === 'TEXTAREA' ||
           el.tagName === 'BUTTON' ||
           el.tagName === 'SELECT' ||
+          el.tagName === 'LABEL' ||
+          el.tagName === 'A' ||
           el.classList.contains('doggy-block') ||
           rect.height > 20 || // Substantial elements
           parseFloat(computedStyle.borderTopWidth) > 0 || // Elements with borders
@@ -333,7 +398,7 @@ class WebDoggy {
           const elementTop = rect.top + window.scrollY;
           const distance = Math.abs(point.y - elementTop);
           
-          if (distance < closestDistance && distance < 50) {
+          if (distance < closestDistance && distance < 100) {
             closestDistance = distance;
             closestSurface = { top: elementTop, element: el };
           }
@@ -441,7 +506,6 @@ class WebDoggy {
     
     const speed = 5;
     const moveX = (dx / distance) * speed;
-    const moveY = (dy / distance) * speed;
     
     this.position.x += moveX;
     
@@ -453,15 +517,20 @@ class WebDoggy {
       this.position.y = surfaceInfo.top - 35;
       this.velocity.y = 0;
       
-      // Jump over obstacles if target is above
-      if (this.targetPosition.y < this.position.y - 20) {
-        this.velocity.y = -8;
+      // Jump over obstacles if target is above or far
+      if (this.targetPosition.y < this.position.y - 30 || Math.abs(dx) > 100) {
+        this.velocity.y = -20;
         this.doggy.className = 'web-doggy jumping';
       }
     } else {
       // In air - apply gravity
       this.velocity.y += 0.5;
       this.position.y += this.velocity.y;
+      
+      // If we need to go up, jump
+      if (dy < -50 && this.velocity.y > -5) {
+        this.velocity.y = -20;
+      }
     }
     
     // Check ladder
@@ -561,6 +630,149 @@ class WebDoggy {
     this.velocity.y = this.jumpForce;
     this.doggy.className = 'web-doggy jumping';
     setTimeout(() => this.startRandomActivity(), 600);
+  }
+
+  jumpToElement(direction) {
+    this.stopActivity();
+    
+    const currentRect = {
+      x: this.position.x,
+      y: this.position.y,
+      width: 40,
+      height: 35
+    };
+    
+    // Find all walkable elements
+    const walkableElements = this.findWalkableElements();
+    let targetElement = null;
+    let minDistance = Infinity;
+    
+    for (let el of walkableElements) {
+      const rect = el.getBoundingClientRect();
+      const elX = rect.left + window.scrollX + rect.width / 2;
+      const elY = rect.top + window.scrollY;
+      
+      let isValid = false;
+      let distance = 0;
+      
+      if (direction === 'up') {
+        isValid = elY < currentRect.y - 50;
+        distance = currentRect.y - elY;
+      } else if (direction === 'down') {
+        isValid = elY > currentRect.y + 50;
+        distance = elY - currentRect.y;
+      } else if (direction === 'left') {
+        isValid = elX < currentRect.x - 50;
+        distance = currentRect.x - elX;
+      } else if (direction === 'right') {
+        isValid = elX > currentRect.x + 50;
+        distance = elX - currentRect.x;
+      }
+      
+      if (isValid && distance < minDistance) {
+        minDistance = distance;
+        targetElement = { x: elX, y: elY };
+      }
+    }
+    
+    if (targetElement) {
+      // Jump animation
+      this.doggy.className = 'web-doggy jumping';
+      
+      // Move to target with animation
+      this.callDoggyTo(targetElement.x, targetElement.y - 10);
+      
+      // Show jump indicator
+      const indicator = document.createElement('div');
+      indicator.textContent = direction === 'up' ? '⬆️' : 
+                            direction === 'down' ? '⬇️' : 
+                            direction === 'left' ? '⬅️' : '➡️';
+      indicator.style.position = 'absolute';
+      indicator.style.left = (this.position.x + 15) + 'px';
+      indicator.style.top = (this.position.y - 30) + 'px';
+      indicator.style.fontSize = '24px';
+      indicator.style.zIndex = '1000000';
+      indicator.style.pointerEvents = 'none';
+      document.body.appendChild(indicator);
+      
+      setTimeout(() => {
+        indicator.style.transition = 'opacity 0.5s';
+        indicator.style.opacity = '0';
+        setTimeout(() => indicator.remove(), 500);
+      }, 500);
+    } else {
+      // No element found, show message
+      const msg = document.createElement('div');
+      msg.className = 'doggy-stolen-text';
+      msg.textContent = '🐕 No element found!';
+      msg.style.left = (this.position.x + 40) + 'px';
+      msg.style.top = (this.position.y - 40) + 'px';
+      msg.style.background = 'rgba(255, 200, 100, 0.9)';
+      document.body.appendChild(msg);
+      
+      setTimeout(() => {
+        msg.style.transition = 'opacity 0.5s';
+        msg.style.opacity = '0';
+        setTimeout(() => msg.remove(), 500);
+      }, 1500);
+      
+      this.startRandomActivity();
+    }
+  }
+
+  findWalkableElements() {
+    const elements = [];
+    const allElements = document.querySelectorAll('*');
+    
+    for (let el of allElements) {
+      if (el === this.doggy || 
+          el.classList.contains('doggy-stolen-text') ||
+          el.classList.contains('doggy-command-menu') ||
+          el === this.mouthElement ||
+          el === document.body ||
+          el === document.documentElement) {
+        continue;
+      }
+      
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) continue;
+      
+      const computedStyle = window.getComputedStyle(el);
+      
+      const canWalkOn = (
+        el.tagName === 'IMG' ||
+        el.tagName === 'INPUT' ||
+        el.tagName === 'TEXTAREA' ||
+        el.tagName === 'BUTTON' ||
+        el.tagName === 'SELECT' ||
+        el.tagName === 'LABEL' ||
+        el.tagName === 'A' ||
+        el.tagName === 'H1' ||
+        el.tagName === 'H2' ||
+        el.tagName === 'H3' ||
+        el.tagName === 'H4' ||
+        el.tagName === 'H5' ||
+        el.tagName === 'H6' ||
+        el.tagName === 'P' ||
+        el.tagName === 'DIV' && rect.height > 30 ||
+        el.tagName === 'SPAN' && rect.height > 20 ||
+        el.classList.contains('doggy-block') ||
+        parseFloat(computedStyle.borderTopWidth) > 0 ||
+        computedStyle.backgroundColor !== 'rgba(0, 0, 0, 0)' ||
+        computedStyle.backgroundImage !== 'none'
+      );
+      
+      if (canWalkOn) {
+        elements.push(el);
+      }
+    }
+    
+    // Also add custom blocks
+    for (let block of this.blocks) {
+      elements.push(block);
+    }
+    
+    return elements;
   }
 
   createLadder() {
@@ -689,7 +901,7 @@ class WebDoggy {
         // Get position of the input element
         const rect = activeElement.getBoundingClientRect();
         const targetX = rect.left + window.scrollX + rect.width / 2;
-        const targetY = rect.top + window.scrollY + rect.height / 2;
+        const targetY = rect.top + window.scrollY;
         
         // Make doggy run to the input element first
         this.stopActivity();
@@ -703,30 +915,42 @@ class WebDoggy {
             Math.pow(this.position.y - targetY, 2)
           );
           
-          if (distance < 50) {
+          if (distance < 80) {
             clearInterval(checkArrival);
             
-            // Now grab the text
-            this.mouthText = text;
-            
-            // Clear the input
-            if (activeElement.isContentEditable) {
-              activeElement.innerText = '';
-            } else {
-              activeElement.value = '';
-            }
-            
-            // Create visual indicator
-            this.createMouthElement(text);
-            
-            // Make doggy run away
-            this.doggy.className = 'web-doggy running';
-            const randomX = Math.random() * window.innerWidth;
-            this.callDoggyTo(randomX, this.position.y);
+            // Dig animation to get the text
+            this.doggy.className = 'web-doggy digging';
             
             setTimeout(() => {
-              this.startRandomActivity();
-            }, 2000);
+              // Now grab the text
+              this.mouthText = text;
+              
+              // Clear the input
+              if (activeElement.isContentEditable) {
+                activeElement.innerText = '';
+              } else {
+                activeElement.value = '';
+              }
+              
+              // Flash the element
+              const originalBorder = activeElement.style.border;
+              activeElement.style.border = '3px solid #ff6b6b';
+              setTimeout(() => {
+                activeElement.style.border = originalBorder;
+              }, 500);
+              
+              // Create visual indicator
+              this.createMouthElement(text);
+              
+              // Make doggy run away
+              this.doggy.className = 'web-doggy running';
+              const randomX = Math.random() * (window.innerWidth - 100) + 50;
+              this.callDoggyTo(randomX, this.position.y);
+              
+              setTimeout(() => {
+                this.startRandomActivity();
+              }, 2000);
+            }, 1000);
           }
         }, 100);
       }
@@ -842,7 +1066,7 @@ class WebDoggy {
         Math.pow(this.position.y - y, 2)
       );
       
-      if (distance < 50) {
+      if (distance < 80) {
         clearInterval(checkArrival);
         
         if (targetElement) {
