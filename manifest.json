@@ -6,11 +6,7 @@
   "permissions": ["activeTab", "scripting"],
   "action": {
     "default_popup": "popup.html",
-    "default_icon": {
-      "16": "icon-16.png",
-      "48": "icon-16.png",
-      "128": "icon-16.png"
-    }
+    "default_icon": "icon-16.png"
   },
   "background": {
     "service_worker": "background.js"
@@ -28,5 +24,10 @@
       "resources": ["doggy.css"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "icons": {
+    "16": "icon-16.png",
+    "48": "icon-16.png",
+    "128": "icon-16.png"
+  }
 }

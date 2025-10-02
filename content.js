@@ -577,7 +577,7 @@ class WebDoggy {
   startFlying(target) {
     this.isFlying = true;
     this.flyingTarget = target;
-    this.doggy.textContent = '🐕';
+    this.doggy.textContent = '🦋';
     this.doggy.className = 'web-doggy flying';
     this.stopActivity();
     
@@ -596,30 +596,6 @@ class WebDoggy {
       `;
       document.head.appendChild(style);
     }
-    
-    // Show flying indicator
-    const indicator = document.createElement('div');
-    indicator.textContent = '✈️';
-    indicator.style.position = 'absolute';
-    indicator.style.left = (this.position.x + 40) + 'px';
-    indicator.style.top = (this.position.y - 20) + 'px';
-    indicator.style.fontSize = '20px';
-    indicator.style.zIndex = '1000000';
-    indicator.style.pointerEvents = 'none';
-    document.body.appendChild(indicator);
-    
-    const updateIndicator = () => {
-      if (this.isFlying && this.active) {
-        indicator.style.left = (this.position.x + 40) + 'px';
-        indicator.style.top = (this.position.y - 20) + 'px';
-        requestAnimationFrame(updateIndicator);
-      } else {
-        indicator.style.transition = 'opacity 0.5s';
-        indicator.style.opacity = '0';
-        setTimeout(() => indicator.remove(), 500);
-      }
-    };
-    updateIndicator();
   }
 
   fly() {
@@ -755,8 +731,8 @@ class WebDoggy {
       const msg = document.createElement('div');
       msg.className = 'doggy-stolen-text';
       msg.textContent = '🐕 Landing...';
-      msg.style.left = (this.position.x + 40) + 'px';
-      msg.style.top = (this.position.y - 40) + 'px';
+      msg.style.left = (this.position.x + 35) + 'px';
+      msg.style.top = (this.position.y - 30) + 'px';
       msg.style.background = 'rgba(100, 200, 255, 0.9)';
       document.body.appendChild(msg);
       
@@ -770,7 +746,7 @@ class WebDoggy {
       this.isFlying = true;
       this.flyingTarget = null; // Free flight, no target
       this.stopActivity();
-      this.doggy.textContent = '🐕';
+      this.doggy.textContent = '🦋';
       this.doggy.className = 'web-doggy flying';
       
       // Add flying animation if not already added
@@ -792,9 +768,9 @@ class WebDoggy {
       // Show message
       const msg = document.createElement('div');
       msg.className = 'doggy-stolen-text';
-      msg.textContent = '✈️ Flying! Use arrows to move';
-      msg.style.left = (this.position.x + 40) + 'px';
-      msg.style.top = (this.position.y - 40) + 'px';
+      msg.textContent = '🦋 Flying! Use arrows to move';
+      msg.style.left = (this.position.x + 35) + 'px';
+      msg.style.top = (this.position.y - 30) + 'px';
       msg.style.background = 'rgba(100, 200, 255, 0.9)';
       msg.style.maxWidth = '250px';
       document.body.appendChild(msg);
@@ -917,8 +893,8 @@ class WebDoggy {
       const msg = document.createElement('div');
       msg.className = 'doggy-stolen-text';
       msg.textContent = '🐕 No element found!';
-      msg.style.left = (this.position.x + 40) + 'px';
-      msg.style.top = (this.position.y - 40) + 'px';
+      msg.style.left = (this.position.x + 35) + 'px';
+      msg.style.top = (this.position.y - 30) + 'px';
       msg.style.background = 'rgba(255, 200, 100, 0.9)';
       document.body.appendChild(msg);
       
@@ -1177,8 +1153,8 @@ class WebDoggy {
     this.mouthElement = document.createElement('div');
     this.mouthElement.className = 'doggy-stolen-text';
     this.mouthElement.textContent = '💬 ' + text.substring(0, 30) + (text.length > 30 ? '...' : '');
-    this.mouthElement.style.left = (this.position.x + 40) + 'px';
-    this.mouthElement.style.top = (this.position.y - 20) + 'px';
+    this.mouthElement.style.left = (this.position.x + 35) + 'px';
+    this.mouthElement.style.top = (this.position.y + 5) + 'px';
     this.mouthElement.style.background = 'rgba(255, 215, 0, 0.9)';
     this.mouthElement.style.border = '2px solid #FFD700';
     
@@ -1187,8 +1163,8 @@ class WebDoggy {
     // Update position with doggy
     const updateMouthPosition = () => {
       if (!this.active || !this.mouthElement) return;
-      this.mouthElement.style.left = (this.position.x + 40) + 'px';
-      this.mouthElement.style.top = (this.position.y - 20) + 'px';
+      this.mouthElement.style.left = (this.position.x + 35) + 'px';
+      this.mouthElement.style.top = (this.position.y + 5) + 'px';
       requestAnimationFrame(updateMouthPosition);
     };
     updateMouthPosition();
@@ -1200,8 +1176,8 @@ class WebDoggy {
       const msg = document.createElement('div');
       msg.className = 'doggy-stolen-text';
       msg.textContent = '🐕 Nothing in mouth!';
-      msg.style.left = (this.position.x + 40) + 'px';
-      msg.style.top = (this.position.y - 40) + 'px';
+      msg.style.left = (this.position.x + 35) + 'px';
+      msg.style.top = (this.position.y - 30) + 'px';
       msg.style.background = 'rgba(255, 100, 100, 0.9)';
       document.body.appendChild(msg);
       
@@ -1220,8 +1196,8 @@ class WebDoggy {
     const indicator = document.createElement('div');
     indicator.className = 'doggy-stolen-text';
     indicator.textContent = '📍 Click to place text';
-    indicator.style.left = (this.position.x + 40) + 'px';
-    indicator.style.top = (this.position.y - 40) + 'px';
+    indicator.style.left = (this.position.x + 35) + 'px';
+    indicator.style.top = (this.position.y - 30) + 'px';
     indicator.style.background = 'rgba(100, 200, 255, 0.9)';
     document.body.appendChild(indicator);
     
