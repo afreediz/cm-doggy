@@ -1,0 +1,167 @@
+@keyframes walk {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes wag {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-15deg); }
+  75% { transform: rotate(15deg); }
+}
+
+@keyframes jump {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  30% { transform: translateY(-40px) scaleY(1.1); }
+  50% { transform: translateY(-50px) scaleY(0.95); }
+  70% { transform: translateY(-40px) scaleY(1.05); }
+}
+
+@keyframes dig {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  25% { transform: rotate(-20deg) translateY(5px); }
+  50% { transform: rotate(0deg) translateY(0); }
+  75% { transform: rotate(20deg) translateY(5px); }
+}
+
+@keyframes bark {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.1); }
+}
+
+@keyframes sniff {
+  0%, 100% { transform: translateY(0) scaleY(1); }
+  50% { transform: translateY(10px) scaleY(0.9); }
+}
+
+@keyframes run {
+  0%, 100% { transform: translateY(0) scaleX(1); }
+  25% { transform: translateY(-5px) scaleX(1.1); }
+  50% { transform: translateY(0) scaleX(0.95); }
+  75% { transform: translateY(-5px) scaleX(1.05); }
+}
+
+.web-doggy {
+  position: fixed;
+  font-size: 32px;
+  z-index: 999999;
+  cursor: grab;
+  user-select: none;
+  transition: left 0.3s ease, top 0.3s ease;
+  pointer-events: auto;
+}
+
+.web-doggy.walking {
+  animation: walk 0.4s infinite;
+}
+
+.web-doggy.jumping {
+  animation: jump 0.6s;
+}
+
+.web-doggy.digging {
+  animation: dig 0.5s infinite;
+}
+
+.web-doggy.barking {
+  animation: bark 0.3s infinite;
+}
+
+.web-doggy.sniffing {
+  animation: sniff 0.8s infinite;
+}
+
+.web-doggy.running {
+  animation: run 0.2s infinite;
+}
+
+.web-doggy.dragging {
+  cursor: grabbing;
+  transition: none;
+}
+
+.doggy-ladder {
+  position: fixed;
+  background: linear-gradient(90deg, #8B4513 0%, #A0522D 100%);
+  width: 15px;
+  z-index: 999998;
+  border-radius: 3px;
+  box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+  cursor: pointer;
+}
+
+.doggy-ladder::before,
+.doggy-ladder::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 3px;
+  background: #654321;
+  left: 0;
+}
+
+.doggy-ladder::before {
+  top: 25%;
+}
+
+.doggy-ladder::after {
+  top: 50%;
+}
+
+.doggy-block {
+  position: fixed;
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+  border: 2px solid #DAA520;
+  border-radius: 5px;
+  z-index: 999998;
+  cursor: pointer;
+  box-shadow: 2px 2px 8px rgba(0,0,0,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+}
+
+.doggy-command-menu {
+  position: fixed;
+  background: white;
+  border: 2px solid #667eea;
+  border-radius: 10px;
+  padding: 10px;
+  z-index: 1000000;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+  font-family: Arial, sans-serif;
+}
+
+.doggy-command-btn {
+  display: block;
+  width: 100%;
+  padding: 8px 15px;
+  margin: 3px 0;
+  border: none;
+  border-radius: 5px;
+  background: #667eea;
+  color: white;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.doggy-command-btn:hover {
+  background: #764ba2;
+  transform: translateX(3px);
+}
+
+.doggy-stolen-text {
+  position: fixed;
+  z-index: 999997;
+  font-size: 14px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 5px 10px;
+  border-radius: 5px;
+  border: 2px solid #667eea;
+  pointer-events: none;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
