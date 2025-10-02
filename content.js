@@ -16,6 +16,10 @@ class WebDoggy {
     this.groundLevel = 0;
     this.isClimbing = false;
     this.targetPosition = null;
+    this.mouthText = null;
+    this.mouthElement = null;
+    this.placementMode = false;
+    this.placementListener = null;
     
     this.activities = ['walk', 'sniff', 'dig', 'bark', 'sit'];
     this.setupMessageListener();
@@ -67,6 +71,12 @@ class WebDoggy {
       } else if (e.ctrlKey && e.key === 'b') {
         e.preventDefault();
         this.createBlock();
+      } else if (e.ctrlKey && e.key === 'q') {
+        e.preventDefault();
+        this.stealTypedText();
+      } else if (e.ctrlKey && e.key === 'a') {
+        e.preventDefault();
+        this.preparePlacement();
       }
     });
 
@@ -121,12 +131,24 @@ class WebDoggy {
       this.commandMenu = null;
     }
     
+    if (this.mouthElement) {
+      this.mouthElement.remove();
+      this.mouthElement = null;
+    }
+    
+    if (this.placementListener) {
+      document.removeEventListener('click', this.placementListener);
+      this.placementListener = null;
+    }
+    
     this.ladders.forEach(l => l.remove());
     this.blocks.forEach(b => b.remove());
     this.stolenTexts.forEach(t => t.remove());
     this.ladders = [];
     this.blocks = [];
     this.stolenTexts = [];
+    this.mouthText = null;
+    this.placementMode = false;
   }
 
   setupDragAndDrop() {
@@ -482,6 +504,278 @@ class WebDoggy {
       this.velocity.x /= 2;
       this.startRandomActivity();
     }, 3000);
+  }
+
+  stealTypedText() {
+    const activeElement = document.activeElement;
+    
+    if (activeElement && (activeElement.tagName === 'INPUT' || 
+        activeElement.tagName === 'TEXTAREA' || 
+        activeElement.isContentEditable)) {
+      
+      let text = '';
+      if (activeElement.isContentEditable) {
+        text = activeElement.innerText;
+      } else {
+        text = activeElement.value;
+      }
+      
+      if (text && text.trim().length > 0) {
+        // Get position of the input element
+        const rect = activeElement.getBoundingClientRect();
+        const targetX = rect.left + window.scrollX + rect.width / 2;
+        const targetY = rect.top + window.scrollY + rect.height / 2;
+        
+        // Make doggy run to the input element first
+        this.stopActivity();
+        this.doggy.className = 'web-doggy running';
+        this.callDoggyTo(targetX, targetY);
+        
+        // Wait for doggy to arrive, then grab text
+        const checkArrival = setInterval(() => {
+          const distance = Math.sqrt(
+            Math.pow(this.position.x - targetX, 2) + 
+            Math.pow(this.position.y - targetY, 2)
+          );
+          
+          if (distance < 50) {
+            clearInterval(checkArrival);
+            
+            // Now grab the text
+            this.mouthText = text;
+            
+            // Clear the input
+            if (activeElement.isContentEditable) {
+              activeElement.innerText = '';
+            } else {
+              activeElement.value = '';
+            }
+            
+            // Create visual indicator
+            this.createMouthElement(text);
+            
+            // Make doggy run away
+            this.doggy.className = 'web-doggy running';
+            const randomX = Math.random() * window.innerWidth;
+            this.callDoggyTo(randomX, this.position.y);
+            
+            setTimeout(() => {
+              this.startRandomActivity();
+            }, 2000);
+          }
+        }, 100);
+      }
+    }
+  }
+
+  createMouthElement(text) {
+    if (this.mouthElement) {
+      this.mouthElement.remove();
+    }
+    
+    this.mouthElement = document.createElement('div');
+    this.mouthElement.className = 'doggy-stolen-text';
+    this.mouthElement.textContent = '💬 ' + text.substring(0, 30) + (text.length > 30 ? '...' : '');
+    this.mouthElement.style.left = (this.position.x + 40) + 'px';
+    this.mouthElement.style.top = (this.position.y - 20) + 'px';
+    this.mouthElement.style.background = 'rgba(255, 215, 0, 0.9)';
+    this.mouthElement.style.border = '2px solid #FFD700';
+    
+    document.body.appendChild(this.mouthElement);
+    
+    // Update position with doggy
+    const updateMouthPosition = () => {
+      if (!this.active || !this.mouthElement) return;
+      this.mouthElement.style.left = (this.position.x + 40) + 'px';
+      this.mouthElement.style.top = (this.position.y - 20) + 'px';
+      requestAnimationFrame(updateMouthPosition);
+    };
+    updateMouthPosition();
+  }
+
+  preparePlacement() {
+    if (!this.mouthText) {
+      // Show message that mouth is empty
+      const msg = document.createElement('div');
+      msg.className = 'doggy-stolen-text';
+      msg.textContent = '🐕 Nothing in mouth!';
+      msg.style.left = (this.position.x + 40) + 'px';
+      msg.style.top = (this.position.y - 40) + 'px';
+      msg.style.background = 'rgba(255, 100, 100, 0.9)';
+      document.body.appendChild(msg);
+      
+      setTimeout(() => {
+        msg.style.transition = 'opacity 0.5s';
+        msg.style.opacity = '0';
+        setTimeout(() => msg.remove(), 500);
+      }, 1500);
+      return;
+    }
+    
+    this.placementMode = true;
+    document.body.style.cursor = 'crosshair';
+    
+    // Show placement indicator
+    const indicator = document.createElement('div');
+    indicator.className = 'doggy-stolen-text';
+    indicator.textContent = '📍 Click to place text';
+    indicator.style.left = (this.position.x + 40) + 'px';
+    indicator.style.top = (this.position.y - 40) + 'px';
+    indicator.style.background = 'rgba(100, 200, 255, 0.9)';
+    document.body.appendChild(indicator);
+    
+    setTimeout(() => {
+      indicator.style.transition = 'opacity 0.5s';
+      indicator.style.opacity = '0';
+      setTimeout(() => indicator.remove(), 500);
+    }, 2000);
+    
+    // Remove old listener if exists
+    if (this.placementListener) {
+      document.removeEventListener('click', this.placementListener);
+    }
+    
+    this.placementListener = (e) => {
+      if (e.target.classList.contains('web-doggy') || 
+          e.target.classList.contains('doggy-stolen-text')) {
+        return;
+      }
+      
+      this.placeText(e.pageX, e.pageY);
+      document.body.style.cursor = 'default';
+      this.placementMode = false;
+      document.removeEventListener('click', this.placementListener);
+      this.placementListener = null;
+    };
+    
+    document.addEventListener('click', this.placementListener);
+  }
+
+  placeText(x, y) {
+    if (!this.mouthText) return;
+    
+    // Check what element is at the click position
+    const elements = document.elementsFromPoint(x - window.scrollX, y - window.scrollY);
+    let targetElement = null;
+    
+    // Find the first input/textarea/editable element
+    for (let el of elements) {
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable) {
+        targetElement = el;
+        break;
+      }
+    }
+    
+    // Run to placement location
+    this.stopActivity();
+    this.callDoggyTo(x, y);
+    
+    // Wait for doggy to arrive, then place text
+    const checkArrival = setInterval(() => {
+      const distance = Math.sqrt(
+        Math.pow(this.position.x - x, 2) + 
+        Math.pow(this.position.y - y, 2)
+      );
+      
+      if (distance < 50) {
+        clearInterval(checkArrival);
+        
+        if (targetElement) {
+          // Fill the input element
+          if (targetElement.isContentEditable) {
+            targetElement.innerText = this.mouthText;
+          } else {
+            targetElement.value = this.mouthText;
+          }
+          
+          // Highlight the element briefly
+          const originalBorder = targetElement.style.border;
+          targetElement.style.border = '3px solid #667eea';
+          targetElement.style.transition = 'border 0.3s';
+          
+          setTimeout(() => {
+            targetElement.style.border = originalBorder;
+          }, 1000);
+        } else {
+          // Place the text as a sticky note on the page
+          const textElement = document.createElement('div');
+          textElement.style.position = 'fixed';
+          textElement.style.left = x + 'px';
+          textElement.style.top = (y - window.scrollY) + 'px';
+          textElement.style.background = 'rgba(255, 255, 255, 0.95)';
+          textElement.style.padding = '10px 15px';
+          textElement.style.borderRadius = '8px';
+          textElement.style.border = '2px solid #667eea';
+          textElement.style.zIndex = '999996';
+          textElement.style.maxWidth = '300px';
+          textElement.style.wordWrap = 'break-word';
+          textElement.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+          textElement.style.fontFamily = 'Arial, sans-serif';
+          textElement.style.fontSize = '14px';
+          textElement.textContent = this.mouthText;
+          
+          // Make it draggable
+          let isDragging = false;
+          let offsetX, offsetY;
+          
+          textElement.style.cursor = 'move';
+          
+          textElement.addEventListener('mousedown', (e) => {
+            isDragging = true;
+            offsetX = e.clientX - parseInt(textElement.style.left);
+            offsetY = e.clientY - parseInt(textElement.style.top);
+            textElement.style.zIndex = '999999';
+          });
+          
+          document.addEventListener('mousemove', (e) => {
+            if (!isDragging) return;
+            textElement.style.left = (e.clientX - offsetX) + 'px';
+            textElement.style.top = (e.clientY - offsetY) + 'px';
+          });
+          
+          document.addEventListener('mouseup', () => {
+            if (isDragging) {
+              isDragging = false;
+              textElement.style.zIndex = '999996';
+            }
+          });
+          
+          // Add delete button
+          const deleteBtn = document.createElement('button');
+          deleteBtn.textContent = '×';
+          deleteBtn.style.position = 'absolute';
+          deleteBtn.style.top = '-10px';
+          deleteBtn.style.right = '-10px';
+          deleteBtn.style.width = '24px';
+          deleteBtn.style.height = '24px';
+          deleteBtn.style.borderRadius = '50%';
+          deleteBtn.style.border = 'none';
+          deleteBtn.style.background = '#f5576c';
+          deleteBtn.style.color = 'white';
+          deleteBtn.style.cursor = 'pointer';
+          deleteBtn.style.fontSize = '18px';
+          deleteBtn.style.lineHeight = '1';
+          deleteBtn.onclick = () => textElement.remove();
+          textElement.appendChild(deleteBtn);
+          
+          document.body.appendChild(textElement);
+        }
+        
+        // Clear mouth
+        this.mouthText = null;
+        if (this.mouthElement) {
+          this.mouthElement.remove();
+          this.mouthElement = null;
+        }
+        
+        // Doggy celebrates
+        this.doggy.className = 'web-doggy jumping';
+        setTimeout(() => {
+          this.doggy.className = 'web-doggy barking';
+          setTimeout(() => this.startRandomActivity(), 1000);
+        }, 600);
+      }
+    }, 100);
   }
 }
 
