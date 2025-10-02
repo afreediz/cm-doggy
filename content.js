@@ -244,6 +244,9 @@ class WebDoggy {
       this.moveToTarget();
     }
     
+    // Update mouth element position if it exists
+    this.updateMouthPosition();
+    
     this.animationFrame = requestAnimationFrame(() => this.updateLoop());
   }
 
@@ -498,6 +501,17 @@ class WebDoggy {
     }
   }
 
+  // New method to update mouth position
+  updateMouthPosition() {
+    if (this.mouthElement && this.active) {
+      // Position the mouth element relative to the doggy
+      // Adjust offset based on whether doggy is flipped
+      const xOffset = this.isFlipped ? -5 : 15;
+      this.mouthElement.style.left = (this.position.x + xOffset) + 'px';
+      this.mouthElement.style.top = (this.position.y + 5) + 'px';
+    }
+  }
+
   callDoggyTo(x, y) {
     this.targetPosition = { x: x - 20, y: y - 40 };
     this.stopActivity();
@@ -599,35 +613,38 @@ class WebDoggy {
   }
 
   fly() {
-    if (!this.flyingTarget) {
+    if (!this.flyingTarget && !this.isFlying) {
       this.isFlying = false;
       this.doggy.className = 'web-doggy';
       return;
     }
     
-    const dx = this.flyingTarget.x - this.position.x;
-    const dy = this.flyingTarget.y - this.position.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    
-    if (distance < 15) {
-      // Reached target
-      this.isFlying = false;
-      this.flyingTarget = null;
-      this.velocity.y = 0;
-      this.doggy.className = 'web-doggy';
-      this.doggy.textContent = '🐕';
-      this.targetPosition = null;
-      this.startRandomActivity();
-      return;
+    if (this.flyingTarget) {
+      const dx = this.flyingTarget.x - this.position.x;
+      const dy = this.flyingTarget.y - this.position.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      if (distance < 15) {
+        // Reached target
+        this.isFlying = false;
+        this.flyingTarget = null;
+        this.velocity.y = 0;
+        this.doggy.className = 'web-doggy';
+        this.doggy.textContent = '🐕';
+        this.targetPosition = null;
+        this.startRandomActivity();
+        return;
+      }
+      
+      const flySpeed = 6;
+      this.position.x += (dx / distance) * flySpeed;
+      this.position.y += (dy / distance) * flySpeed;
+      
+      if ((dx > 0 && !this.isFlipped) || (dx < 0 && this.isFlipped)) {
+        this.flip();
+      }
     }
-    
-    const flySpeed = 6;
-    this.position.x += (dx / distance) * flySpeed;
-    this.position.y += (dy / distance) * flySpeed;
-    
-    if ((dx > 0 && !this.isFlipped) || (dx < 0 && this.isFlipped)) {
-      this.flip();
-    }
+    // Free flying mode handled by setupFlyingControls
     
     this.updatePosition();
   }
@@ -1160,14 +1177,7 @@ class WebDoggy {
     
     document.body.appendChild(this.mouthElement);
     
-    // Update position with doggy
-    const updateMouthPosition = () => {
-      if (!this.active || !this.mouthElement) return;
-      this.mouthElement.style.left = (this.position.x + 35) + 'px';
-      this.mouthElement.style.top = (this.position.y + 5) + 'px';
-      requestAnimationFrame(updateMouthPosition);
-    };
-    updateMouthPosition();
+    // The position will be updated in the main updateLoop via updateMouthPosition()
   }
 
   preparePlacement() {
