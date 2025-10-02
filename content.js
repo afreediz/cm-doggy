@@ -237,7 +237,7 @@ class WebDoggy {
     const moved = Math.abs(this.position.x - this.lastPosition.x) + 
                   Math.abs(this.position.y - this.lastPosition.y);
     
-    if (moved < 3 && this.currentActivity === 'walk') {
+    if (moved < 1 && (this.currentActivity === 'walk' || this.targetPosition)) {
       this.stuckCounter++;
       
       if (this.stuckCounter > this.stuckThreshold) {
@@ -254,17 +254,30 @@ class WebDoggy {
   }
 
   unstuck() {
-    // Try jumping
-    this.velocity.y = this.jumpForce;
+    // Try jumping higher to get unstuck
+    this.velocity.y = -12;
     this.doggy.className = 'web-doggy jumping';
     
     // Also change direction
     this.velocity.x *= -1;
     this.flip();
     
+    // If we have a target, try a different approach
+    if (this.targetPosition) {
+      const dx = this.targetPosition.x - this.position.x;
+      const dy = this.targetPosition.y - this.position.y;
+      
+      // If target is significantly above or below, give a stronger vertical push
+      if (Math.abs(dy) > 50) {
+        this.velocity.y = dy < 0 ? -15 : 5;
+      }
+    }
+    
     setTimeout(() => {
       if (this.currentActivity === 'walk') {
         this.doggy.className = 'web-doggy walking';
+      } else if (this.targetPosition) {
+        this.doggy.className = 'web-doggy running';
       }
     }, 600);
   }
@@ -485,9 +498,10 @@ class WebDoggy {
   }
 
   callDoggyTo(x, y) {
-    this.targetPosition = { x: x - 20, y: y - 40 };
+    this.targetPosition = { x: x - 20, y: y };
     this.stopActivity();
     this.doggy.className = 'web-doggy running';
+    this.velocity.y = 0; // Reset vertical velocity when starting new target
   }
 
   moveToTarget() {
@@ -509,6 +523,9 @@ class WebDoggy {
     
     this.position.x += moveX;
     
+    // Check if target is above or below
+    const verticalDiff = this.targetPosition.y - this.position.y;
+    
     // Apply gravity and surface detection even when moving to target
     const surfaceInfo = this.getSurfaceBelow();
     
@@ -517,27 +534,47 @@ class WebDoggy {
       this.position.y = surfaceInfo.top - 35;
       this.velocity.y = 0;
       
-      // Jump over obstacles if target is above or far
-      if (this.targetPosition.y < this.position.y - 30 || Math.abs(dx) > 100) {
-        this.velocity.y = -20;
+      // If target is above us, jump
+      if (verticalDiff < -10) {
+        // Calculate jump force based on height difference
+        const jumpForce = Math.max(-15, Math.min(-8, verticalDiff / 3));
+        this.velocity.y = jumpForce;
         this.doggy.className = 'web-doggy jumping';
+      }
+      // If target is below and we're close horizontally, let gravity handle it
+      else if (verticalDiff > 20 && Math.abs(dx) < 50) {
+        // Don't resist gravity, let doggy fall down
+        this.velocity.y = 2;
       }
     } else {
       // In air - apply gravity
       this.velocity.y += 0.5;
-      this.position.y += this.velocity.y;
       
-      // If we need to go up, jump
-      if (dy < -50 && this.velocity.y > -5) {
-        this.velocity.y = -20;
+      // If we need to go up significantly and we're falling, jump again
+      if (verticalDiff < -30 && this.velocity.y > 0) {
+        this.velocity.y = -10;
       }
+      
+      // If target is below us and we're going up, start falling faster
+      if (verticalDiff > 30 && this.velocity.y < 0) {
+        this.velocity.y = Math.min(this.velocity.y + 1, 3);
+      }
+      
+      this.position.y += this.velocity.y;
     }
     
     // Check ladder
     const ladder = this.checkLadderCollision();
-    if (ladder && this.targetPosition.y < this.position.y) {
-      this.velocity.y = -3;
-      this.isClimbing = true;
+    if (ladder) {
+      if (verticalDiff < -10) {
+        // Climb up the ladder
+        this.velocity.y = -4;
+        this.isClimbing = true;
+      } else if (verticalDiff > 10) {
+        // Slide down the ladder
+        this.velocity.y = 4;
+        this.isClimbing = true;
+      }
     }
     
     if ((dx > 0 && !this.isFlipped) || (dx < 0 && this.isFlipped)) {
@@ -1066,7 +1103,7 @@ class WebDoggy {
         Math.pow(this.position.y - y, 2)
       );
       
-      if (distance < 80) {
+      if (distance < 50) {
         clearInterval(checkArrival);
         
         if (targetElement) {
